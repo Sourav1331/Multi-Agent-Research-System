@@ -61,16 +61,36 @@ def researcher_agent(state: ResearchState) -> ResearchState:
 
         search_results = [
             {
+                "id": index,
                 "title": result.get("title", ""),
                 "url": result.get("url", ""),
                 "content": result.get("content", ""),
                 "score": result.get("score", 0),
+                "source_type": "web",
             }
-            for result in raw_results
+            for index, result in enumerate(raw_results, start=1)
         ]
+
+        for document in state.get("uploaded_documents", []):
+            content = str(document.get("content", "")).strip()
+            title = str(document.get("title", "Uploaded document")).strip() or "Uploaded document"
+            if not content:
+                continue
+
+            search_results.append(
+                {
+                    "id": len(search_results) + 1,
+                    "title": title,
+                    "url": "",
+                    "content": content[:6000],
+                    "score": 1,
+                    "source_type": "document",
+                }
+            )
 
         state["search_results"] = search_results
         state["metadata"]["total_sources"] = len(search_results)
+        state["metadata"]["uploaded_documents"] = len(state.get("uploaded_documents", []))
         logger.info("Researcher agent collected %s sources", len(search_results))
         return state
     except Exception as exc:

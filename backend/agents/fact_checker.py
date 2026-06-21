@@ -49,7 +49,8 @@ def _format_verified_sources(search_results: list[dict]) -> str:
     seen: set[str] = set()
     lines: list[str] = []
 
-    for result in search_results:
+    for index, result in enumerate(search_results, start=1):
+        source_id = result.get("id", index)
         title = (result.get("title") or "Untitled source").strip()
         url = (result.get("url") or "").strip()
         key = (url or title).lower()
@@ -59,9 +60,9 @@ def _format_verified_sources(search_results: list[dict]) -> str:
 
         seen.add(key)
         if url:
-            lines.append(f"- [{title}]({url})")
+            lines.append(f"{source_id}. [{title}]({url})")
         else:
-            lines.append(f"- {title}")
+            lines.append(f"{source_id}. {title} (uploaded document)")
 
     if not lines:
         return ""
@@ -91,8 +92,9 @@ def fact_checker_agent(state: ResearchState) -> ResearchState:
 
         sources_summary = "\n\n".join(summaries)
         source_titles = "\n".join(
-            f"- {result.get('title', 'Untitled source')}: {result.get('url', '')}"
-            for result in search_results
+            f"[{result.get('id', index)}] {result.get('title', 'Untitled source')}: "
+            f"{result.get('url', '') or 'uploaded document'}"
+            for index, result in enumerate(search_results, start=1)
         )
         fact_check_prompt = (
             "You are a fact-checker. Review this research report and identify 5 key claims.\n"

@@ -50,8 +50,10 @@ def writer_agent(state: ResearchState) -> ResearchState:
             groq_api_key=os.getenv("GROQ_API_KEY"),
         )
         source_catalog = "\n".join(
-            f"- {result.get('title', 'Untitled source')}: {result.get('url', '')}"
-            for result in search_results
+            f"[{result.get('id', index)}] {result.get('title', 'Untitled source')}"
+            f"{' - ' + result.get('url', '') if result.get('url') else ' - uploaded document'}"
+            f"\nSnippet: {result.get('content', '')[:700]}"
+            for index, result in enumerate(search_results, start=1)
         )
         human_prompt = (
             f"Write a comprehensive research report on: {query}\n\n"
@@ -64,7 +66,7 @@ def writer_agent(state: ResearchState) -> ResearchState:
             "## Key Findings\n"
             "## Detailed Analysis\n"
             "## Conclusion\n\n"
-            "Use markdown formatting. Mention source titles where relevant. "
+            "Use markdown formatting. Cite evidence with numbered citations like [1] or [2] using the source catalog. "
             "Do not write placeholder text such as [Insert Source Title]. "
             "Do not add a References or Sources section."
         )

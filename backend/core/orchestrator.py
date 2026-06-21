@@ -54,7 +54,17 @@ def extract_agent_output(node_name: str, state: ResearchState) -> dict:
     return {}
 
 
-async def run_research_stream(query: str) -> AsyncGenerator[str, None]:
+def _clean_uploaded_documents(uploaded_documents: list[dict] | None) -> list[dict]:
+    cleaned: list[dict] = []
+    for document in uploaded_documents or []:
+        title = str(document.get("title", "Uploaded document")).strip() or "Uploaded document"
+        content = str(document.get("content", "")).strip()
+        if content:
+            cleaned.append({"title": title[:160], "content": content[:12000]})
+    return cleaned[:5]
+
+
+async def run_research_stream(query: str, uploaded_documents: list[dict] | None = None) -> AsyncGenerator[str, None]:
     """
     Yield JSON state updates after each LangGraph node completes.
 
@@ -62,6 +72,7 @@ async def run_research_stream(query: str) -> AsyncGenerator[str, None]:
     """
     started_at = time.perf_counter()
     state = initial_state(query)
+    state["uploaded_documents"] = _clean_uploaded_documents(uploaded_documents)
     latest_state = state
 
     try:
@@ -102,6 +113,7 @@ async def run_research_stream(query: str) -> AsyncGenerator[str, None]:
                         "processing_time": round(time.perf_counter() - started_at, 1),
                         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
                     },
+                    "sources": latest_state.get("search_results", []),
                 },
             }
         ) + "\n"
@@ -116,9 +128,10 @@ async def run_research_stream(query: str) -> AsyncGenerator[str, None]:
         ) + "\n"
 
 
-async def run_research(query: str) -> ResearchState:
+async def run_research(query: str, uploaded_documents: list[dict] | None = None) -> ResearchState:
     """Run the full research workflow and return the final state."""
     state = initial_state(query)
+    state["uploaded_documents"] = _clean_uploaded_documents(uploaded_documents)
 
     try:
         result = await app.ainvoke(state)

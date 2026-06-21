@@ -12,6 +12,10 @@ class ResearchState(TypedDict):
     # Expected item keys: title, url, content, score.
     search_results: list[dict]
 
+    # Text documents uploaded by the user for this run.
+    # Expected item keys: title, content.
+    uploaded_documents: list[dict]
+
     # Key points extracted from search results by the Summarizer agent.
     summaries: list[str]
 
@@ -43,6 +47,7 @@ def initial_state(query: str) -> ResearchState:
     return {
         "query": query,
         "search_results": [],
+        "uploaded_documents": [],
         "summaries": [],
         "draft_report": "",
         "fact_check_notes": [],
