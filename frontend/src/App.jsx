@@ -1,5 +1,5 @@
-import { Activity, FileSearch, Moon, Sparkles, Sun } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Activity, Clock, FileSearch, Moon, Sparkles, Sun, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 import AgentProgress from './components/AgentProgress'
 import QueryInput from './components/QueryInput'
@@ -8,6 +8,7 @@ import ReportDisplay from './components/ReportDisplay'
 const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || ''
 
 const agents = ['researcher', 'summarizer', 'writer', 'fact_checker']
+const HISTORY_KEY = 'research_workspace_history'
 
 function storedTheme() {
   try {
@@ -35,6 +36,14 @@ function initialOutputs() {
   }
 }
 
+function storedHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
 export default function App() {
   const [theme, setTheme] = useState(storedTheme)
   const [query, setQuery] = useState('')
@@ -45,7 +54,10 @@ export default function App() {
   const [finalReport, setFinalReport] = useState('')
   const [factCheckNotes, setFactCheckNotes] = useState([])
   const [metadata, setMetadata] = useState({})
+  const [sources, setSources] = useState([])
+  const [history, setHistory] = useState(storedHistory)
   const [error, setError] = useState(null)
+  const latestFactCheckNotes = useRef([])
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -60,7 +72,46 @@ export default function App() {
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
   }
 
-  async function handleResearch(nextQuery) {
+  function saveHistory(entry) {
+    setHistory((current) => {
+      const next = [entry, ...current.filter((item) => item.id !== entry.id)].slice(0, 12)
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
+      } catch {
+        // History remains visible for the current session if storage is unavailable.
+      }
+      return next
+    })
+  }
+
+  function clearHistory() {
+    setHistory([])
+    try {
+      localStorage.removeItem(HISTORY_KEY)
+    } catch {
+      // No-op.
+    }
+  }
+
+  function openHistoryItem(item) {
+    setQuery(item.query)
+    setFinalReport(item.report)
+    setFactCheckNotes(item.factCheckNotes || [])
+    latestFactCheckNotes.current = item.factCheckNotes || []
+    setMetadata(item.metadata || {})
+    setSources(item.sources || [])
+    setCurrentAgent('complete')
+    setIsLoading(false)
+    setError(null)
+    setAgentStatuses({
+      researcher: 'completed',
+      summarizer: 'completed',
+      writer: 'completed',
+      fact_checker: 'completed',
+    })
+  }
+
+  async function handleResearch(nextQuery, uploadedDocuments = []) {
     setQuery(nextQuery)
     setIsLoading(true)
     setCurrentAgent('researcher')
@@ -68,14 +119,16 @@ export default function App() {
     setAgentOutputs(initialOutputs())
     setFinalReport('')
     setFactCheckNotes([])
+    latestFactCheckNotes.current = []
     setMetadata({})
+    setSources([])
     setError(null)
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/research/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: nextQuery }),
+        body: JSON.stringify({ query: nextQuery, uploaded_documents: uploadedDocuments }),
       })
 
       if (!response.ok || !response.body) {
@@ -113,8 +166,21 @@ export default function App() {
           }
 
           if (event.status === 'complete') {
-            setFinalReport(event.data?.final_report || '')
-            setMetadata(event.data?.metadata || {})
+            const completedReport = event.data?.final_report || ''
+            const completedMetadata = event.data?.metadata || {}
+            const completedSources = event.data?.sources || []
+            setFinalReport(completedReport)
+            setMetadata(completedMetadata)
+            setSources(completedSources)
+            saveHistory({
+              id: `${Date.now()}`,
+              query: nextQuery,
+              report: completedReport,
+              factCheckNotes: latestFactCheckNotes.current,
+              metadata: completedMetadata,
+              sources: completedSources,
+              createdAt: new Date().toLocaleString(),
+            })
             setAgentStatuses((previous) => {
               const completed = { ...previous }
               agents.forEach((agent) => {
@@ -133,7 +199,9 @@ export default function App() {
           setAgentOutputs((previous) => ({ ...previous, [agent]: event.data }))
 
           if (agent === 'fact_checker') {
-            setFactCheckNotes(event.data?.fact_check_notes || [])
+            const notes = event.data?.fact_check_notes || []
+            latestFactCheckNotes.current = notes
+            setFactCheckNotes(notes)
           }
 
           setAgentStatuses((previous) => {
@@ -198,8 +266,36 @@ export default function App() {
 
         {(isLoading || finalReport || currentAgent) && (
           <div className="mt-6 grid gap-5 xl:grid-cols-[390px_minmax(0,1fr)]">
-            <AgentProgress currentAgent={currentAgent} agentStatuses={agentStatuses} agentOutputs={agentOutputs} />
-            <ReportDisplay report={finalReport} factCheckNotes={factCheckNotes} metadata={metadata} />
+            <div className="space-y-5">
+              <AgentProgress currentAgent={currentAgent} agentStatuses={agentStatuses} agentOutputs={agentOutputs} />
+              <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">History</h2>
+                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Recent reports saved locally.</p>
+                  </div>
+                  <button type="button" onClick={clearHistory} disabled={history.length === 0} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800" aria-label="Clear history">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {history.length === 0 ? (
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">No completed reports yet.</p>
+                  ) : (
+                    history.map((item) => (
+                      <button key={item.id} type="button" onClick={() => openHistoryItem(item)} className="block w-full rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-left transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-blue-700 dark:hover:bg-blue-950">
+                        <span className="line-clamp-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">{item.query}</span>
+                        <span className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                          <Clock size={13} />
+                          {item.createdAt}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+            <ReportDisplay report={finalReport} factCheckNotes={factCheckNotes} metadata={metadata} sources={sources} />
           </div>
         )}
 

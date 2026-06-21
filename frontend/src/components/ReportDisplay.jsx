@@ -1,7 +1,12 @@
-import { CheckCircle, Clipboard, Download, FileDown, XCircle } from 'lucide-react'
+import { CheckCircle, Clipboard, Download, ExternalLink, FileDown, XCircle } from 'lucide-react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 
-export default function ReportDisplay({ report, factCheckNotes = [], metadata = {} }) {
+export default function ReportDisplay({ report, factCheckNotes = [], metadata = {}, sources = [] }) {
+  const [showSources, setShowSources] = useState(true)
+
+  const visibleSources = sources.filter((source) => source?.title)
+
   function handleCopy() {
     if (report) {
       navigator.clipboard.writeText(report)
@@ -86,6 +91,14 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            onClick={() => setShowSources((current) => !current)}
+            disabled={visibleSources.length === 0}
+            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Sources
+          </button>
+          <button
+            type="button"
             onClick={handleCopy}
             disabled={!report}
             className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
@@ -106,6 +119,7 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
             type="button"
             onClick={handleDownloadPdf}
             disabled={!report}
+            title="Export PDF"
             className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
           >
             <FileDown size={16} />
@@ -127,6 +141,30 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
             <div className="h-28 w-full animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-900" />
           </div>
         )}
+
+        {showSources && visibleSources.length > 0 ? (
+          <div className="mt-8 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+            <h3 className="mb-4 text-base font-semibold text-zinc-950 dark:text-zinc-50">Source Viewer</h3>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {visibleSources.map((source, index) => (
+                <article key={`${source.url || source.title}-${index}`} className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400">[{source.id || index + 1}] {source.source_type === 'document' ? 'Uploaded document' : 'Web source'}</p>
+                      <h4 className="mt-1 line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">{source.title}</h4>
+                    </div>
+                    {source.url ? (
+                      <a href={source.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-blue-600 dark:hover:bg-zinc-800 dark:hover:text-blue-300" aria-label={`Open ${source.title}`}>
+                        <ExternalLink size={16} />
+                      </a>
+                    ) : null}
+                  </div>
+                  <p className="line-clamp-4 text-sm leading-6 text-zinc-600 dark:text-zinc-400">{source.content || 'No snippet available.'}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {factCheckNotes.length > 0 ? (
           <div className="fact-check-section mt-8 border-t border-zinc-200 pt-5 dark:border-zinc-800">
