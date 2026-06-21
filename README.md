@@ -53,7 +53,7 @@ Final Markdown Report
 1. Clone the repo:
 
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/Sourav1331/Multi-Agent-Research-System.git
    cd multi-agent-research
    ```
 
