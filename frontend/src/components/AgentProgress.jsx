@@ -13,15 +13,15 @@ function outputSummary(agentId, output) {
   if (!output) return null
 
   if (agentId === 'researcher') {
-    return <p className="text-sm text-slate-600">Found {output.sources_found || 0} sources</p>
+    return <p className="text-sm text-zinc-600 dark:text-zinc-400">Found {output.sources_found || 0} sources</p>
   }
 
   if (agentId === 'summarizer') {
-    return <p className="text-sm text-slate-600">Extracted {output.summaries_count || 0} key points</p>
+    return <p className="text-sm text-zinc-600 dark:text-zinc-400">Extracted {output.summaries_count || 0} key points</p>
   }
 
   if (agentId === 'writer') {
-    return <p className="text-sm text-slate-600">Draft report ready ({output.draft_length || 0} characters)</p>
+    return <p className="text-sm text-zinc-600 dark:text-zinc-400">Draft report ready ({output.draft_length || 0} characters)</p>
   }
 
   if (agentId === 'fact_checker') {
@@ -29,7 +29,7 @@ function outputSummary(agentId, output) {
     return (
       <div className="flex flex-wrap gap-2">
         {notes.length === 0 ? (
-          <p className="text-sm text-slate-600">No fact checks yet</p>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">No fact checks yet</p>
         ) : (
           notes.map((note, index) => (
             <span
@@ -54,13 +54,13 @@ export default function AgentProgress({ currentAgent, agentStatuses, agentOutput
   const progress = Math.round((completedCount / agents.length) * 100)
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-5">
-        <div className="mb-2 flex items-center justify-between text-sm font-medium text-slate-700">
-          <span>Agent Progress</span>
-          <span>{progress}%</span>
+        <div className="mb-2 flex items-center justify-between text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          <span>Workflow Progress</span>
+          <span className="tabular-nums">{progress}%</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
           <div className="h-full rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${progress}%` }} />
         </div>
       </div>
@@ -74,17 +74,25 @@ export default function AgentProgress({ currentAgent, agentStatuses, agentOutput
           return (
             <article
               key={agent.id}
-              className={`rounded-lg border bg-white p-4 transition ${
-                isRunning ? 'running-agent-card border-blue-200 shadow-sm' : 'border-slate-200'
+              className={`rounded-lg border bg-white p-4 transition dark:bg-zinc-950 ${
+                isRunning ? 'running-agent-card border-blue-200 shadow-sm dark:border-blue-700' : 'border-zinc-200 dark:border-zinc-800'
               }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                  <span
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                      status === 'completed'
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                        : isRunning
+                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                          : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                    }`}
+                  >
                     <Icon size={20} />
                   </span>
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-slate-950">{agent.name}</h3>
+                    <h3 className="font-semibold text-zinc-950 dark:text-zinc-50">{agent.name}</h3>
                     <div className="mt-2">{status === 'completed' ? outputSummary(agent.id, agentOutputs[agent.id]) : null}</div>
                   </div>
                 </div>

@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 from langgraph.graph import END, StateGraph
 
@@ -58,6 +60,7 @@ async def run_research_stream(query: str) -> AsyncGenerator[str, None]:
 
     Intended for FastAPI StreamingResponse or SSE-style progress updates.
     """
+    started_at = time.perf_counter()
     state = initial_state(query)
     latest_state = state
 
@@ -92,7 +95,14 @@ async def run_research_stream(query: str) -> AsyncGenerator[str, None]:
             {
                 "current_agent": "complete",
                 "status": "complete",
-                "data": {"final_report": latest_state.get("final_report", "")},
+                "data": {
+                    "final_report": latest_state.get("final_report", ""),
+                    "metadata": {
+                        **latest_state.get("metadata", {}),
+                        "processing_time": round(time.perf_counter() - started_at, 1),
+                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+                    },
+                },
             }
         ) + "\n"
     except Exception as exc:

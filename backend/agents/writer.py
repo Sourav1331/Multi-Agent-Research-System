@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = (
     "You are an expert research writer. Write clear, structured, professional reports. "
     "Use markdown formatting. Always cite sources by mentioning the source title. "
-    "Be thorough but concise. Never hallucinate - only use the provided information."
+    "Be thorough but concise. Never hallucinate - only use the provided information. "
+    "Do not create a References or Sources section; the application adds verified sources separately."
 )
 
 
@@ -35,6 +36,7 @@ def writer_agent(state: ResearchState) -> ResearchState:
         state["current_agent"] = "writer"
         query = state["query"]
         summaries = state.get("summaries", [])
+        search_results = state.get("search_results", [])
         logger.info("Writer agent started with %s summaries", len(summaries))
 
         if not summaries:
@@ -47,8 +49,14 @@ def writer_agent(state: ResearchState) -> ResearchState:
             temperature=0.4,
             groq_api_key=os.getenv("GROQ_API_KEY"),
         )
+        source_catalog = "\n".join(
+            f"- {result.get('title', 'Untitled source')}: {result.get('url', '')}"
+            for result in search_results
+        )
         human_prompt = (
             f"Write a comprehensive research report on: {query}\n\n"
+            "Available source catalog:\n"
+            f"{source_catalog}\n\n"
             "Based on these key findings:\n"
             f"{chr(10).join(summaries)}\n\n"
             "Structure the report with these sections:\n"
@@ -56,7 +64,9 @@ def writer_agent(state: ResearchState) -> ResearchState:
             "## Key Findings\n"
             "## Detailed Analysis\n"
             "## Conclusion\n\n"
-            "Use markdown formatting. Mention source titles where relevant."
+            "Use markdown formatting. Mention source titles where relevant. "
+            "Do not write placeholder text such as [Insert Source Title]. "
+            "Do not add a References or Sources section."
         )
 
         response = _invoke_with_retry(

@@ -35,6 +35,40 @@ def _parse_fact_check_json(content: str) -> list[dict]:
         return ast.literal_eval(cleaned)
 
 
+def _strip_generated_references(report: str) -> str:
+    """Remove model-generated source sections so verified sources can be appended."""
+    return re.sub(
+        r"\n{0,2}(?:#{1,3}\s*)?(?:references|sources)\s*\n[-=]*\n?.*$",
+        "",
+        report.strip(),
+        flags=re.IGNORECASE | re.DOTALL | re.MULTILINE,
+    ).strip()
+
+
+def _format_verified_sources(search_results: list[dict]) -> str:
+    seen: set[str] = set()
+    lines: list[str] = []
+
+    for result in search_results:
+        title = (result.get("title") or "Untitled source").strip()
+        url = (result.get("url") or "").strip()
+        key = (url or title).lower()
+
+        if not key or key in seen:
+            continue
+
+        seen.add(key)
+        if url:
+            lines.append(f"- [{title}]({url})")
+        else:
+            lines.append(f"- {title}")
+
+    if not lines:
+        return ""
+
+    return "## Sources\n\n" + "\n".join(lines)
+
+
 def fact_checker_agent(state: ResearchState) -> ResearchState:
     """Verify draft claims against summaries and produce the final report."""
     try:
@@ -86,7 +120,8 @@ def fact_checker_agent(state: ResearchState) -> ResearchState:
         if unverified_claims:
             revision_prompt = (
                 "Revise this draft report so unsupported or low-confidence claims are corrected "
-                "or removed. Use only the provided source summaries.\n\n"
+                "or removed. Use only the provided source summaries. "
+                "Do not add a References or Sources section.\n\n"
                 f"Draft report:\n{draft_report}\n\n"
                 f"Unsupported claims:\n{json.dumps(unverified_claims, indent=2)}\n\n"
                 f"Source summaries:\n{sources_summary}"
@@ -96,10 +131,12 @@ def fact_checker_agent(state: ResearchState) -> ResearchState:
         else:
             final_report = draft_report
 
+        cleaned_report = _strip_generated_references(final_report)
+        verified_sources = _format_verified_sources(search_results)
         total = len(fact_check_notes)
         verified_count = total - len(unverified_claims)
         state["final_report"] = (
-            f"{final_report}\n\n---\n"
+            f"{cleaned_report}\n\n{verified_sources}\n\n---\n"
             f"*Fact-check complete. {verified_count}/{total} claims verified.*"
         )
         state["current_agent"] = "complete"
