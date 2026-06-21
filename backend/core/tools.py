@@ -2,7 +2,9 @@
 
 import contextlib
 import io
+import time
 
+import chromadb
 from dotenv import load_dotenv
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.vectorstores import Chroma
@@ -11,6 +13,28 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 
 load_dotenv()
+
+
+def _invoke_with_retry(llm, messages):
+    for attempt in range(3):
+        try:
+            return llm.invoke(messages)
+        except Exception as exc:
+            if "429" in str(exc) and attempt < 2:
+                time.sleep(2**attempt)
+            else:
+                raise
+
+
+def _research_docs_vector_store(embeddings: HuggingFaceEmbeddings) -> Chroma:
+    client = chromadb.PersistentClient(path="./chroma_db")
+    client.get_or_create_collection("research_docs")
+    return Chroma(
+        collection_name="research_docs",
+        embedding_function=embeddings,
+        persist_directory="./chroma_db",
+        client=client,
+    )
 
 
 @tool("web_search")
@@ -37,12 +61,10 @@ def web_search_tool(query: str) -> list[dict] | str:
 def document_retrieval_tool(query: str, n_results: int = 5) -> list[str] | str:
     """Retrieve semantically relevant chunks from stored documents using vector similarity search."""
     try:
+        print("Loading embedding model... (first run takes 1-2 minutes)")
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        vector_store = Chroma(
-            collection_name="research_docs",
-            embedding_function=embeddings,
-            persist_directory="./chroma_db",
-        )
+        print("Embedding model loaded.")
+        vector_store = _research_docs_vector_store(embeddings)
         documents = vector_store.similarity_search(query, k=n_results)
         return [document.page_content for document in documents]
     except Exception as exc:
@@ -95,7 +117,7 @@ def summarize_text_tool(text: str, max_points: int = 5) -> str:
             f"Summarize the following text into exactly {max_points} key bullet points. "
             f"Be concise and factual:\n\n{text}"
         )
-        response = llm.invoke(prompt)
+        response = _invoke_with_retry(llm, prompt)
         return response.content
     except Exception as exc:
         return f"summarize_text error: {exc}"
