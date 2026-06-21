@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+chroma_db/
+
+node_modules/
+dist/
+npm-debug.log*
+
+.DS_Store
