@@ -8,7 +8,7 @@ A full-stack AI research application that streams a LangGraph-powered, multi-age
 User
   |
   v
-React + Vite Frontend
+React frontend served by Nginx
   |
   |  SSE stream over /api/research/stream
   v
@@ -37,7 +37,7 @@ Final Markdown Report
 - Tavily-powered web research for current information.
 - RAG-ready document retrieval using Hugging Face embeddings and persistent ChromaDB.
 - Markdown report rendering with copy and download actions.
-- Docker Compose setup for backend, frontend, and persistent ChromaDB storage.
+- Docker Compose setup for backend, Nginx-served frontend, and persistent ChromaDB storage.
 
 ## Tech Stack
 
@@ -95,6 +95,8 @@ The backend API docs are available at:
 ```text
 http://localhost:8000/docs
 ```
+
+In Docker, the frontend container serves the built React app on port `5173` and proxies `/api/*` plus `/health` to the backend container.
 
 ## Project Structure
 
