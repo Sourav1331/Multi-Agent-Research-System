@@ -76,6 +76,7 @@ def writer_agent(state: ResearchState) -> ResearchState:
         summaries = state.get("summaries", [])
         search_results = state.get("search_results", [])
         preferences = state.get("preferences", {})
+        answer_focus = preferences.get("answer_focus", "key_details")
         document_sources = [result for result in search_results if result.get("source_type") == "document"]
         web_sources = [result for result in search_results if result.get("source_type") == "web"]
         is_document_focused = bool(document_sources) and not web_sources
@@ -97,7 +98,24 @@ def writer_agent(state: ResearchState) -> ResearchState:
             f"\nSnippet: {result.get('content', '')[:700]}"
             for index, result in enumerate(search_results, start=1)
         )
-        if is_document_focused:
+        if is_document_focused and answer_focus == "summary":
+            structure_prompt = (
+                "Structure the report with these sections:\n"
+                "## Document Summary\n"
+                "## Most Important Details\n"
+                "## Notes\n\n"
+                "Keep the answer concise and easy to understand while preserving exact values from the document. "
+            )
+        elif is_document_focused and answer_focus == "action_points":
+            structure_prompt = (
+                "Structure the report with these sections:\n"
+                "## Document Summary\n"
+                "## Required Actions\n"
+                "## Important Dates and Instructions\n"
+                "## Checklist\n\n"
+                "Prioritize what the user must do next, required documents, deadlines, venue/reporting instructions, and warnings. "
+            )
+        elif is_document_focused:
             structure_prompt = (
                 "Structure the report with these sections:\n"
                 "## Document Summary\n"
@@ -107,6 +125,21 @@ def writer_agent(state: ResearchState) -> ResearchState:
                 "For uploaded documents, prioritize extracting the actual useful fields from the document. "
                 "If it is an admit card, include candidate name, roll/registration/application number, exam name, date, time, venue/address, reporting instructions, and issuing authority when present. "
                 "If any expected field is not found, write 'Not found in the extracted document text.' "
+            )
+        elif answer_focus == "action_points":
+            structure_prompt = (
+                "Structure the report with these sections:\n"
+                "## Overview\n"
+                "## Key Findings\n"
+                "## Recommended Actions\n"
+                "## Risks and Watchpoints\n\n"
+            )
+        elif answer_focus == "summary":
+            structure_prompt = (
+                "Structure the report with these sections:\n"
+                "## Summary\n"
+                "## Key Points\n"
+                "## Conclusion\n\n"
             )
         else:
             structure_prompt = (

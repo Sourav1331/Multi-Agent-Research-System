@@ -86,12 +86,21 @@ def _extract_likely_fields(text: str) -> str:
     return "\n".join(deduped[:60])
 
 
-def _summary_prompt(query: str, title: str, text_block: str, source_type: str) -> str:
+def _focus_instruction(answer_focus: str) -> str:
+    if answer_focus == "summary":
+        return "Prioritize a concise plain-language summary before listing fields."
+    if answer_focus == "action_points":
+        return "Prioritize actionable next steps, deadlines, required documents, warnings, and checklist items."
+    return "Prioritize exact key fields and values, especially names, IDs, dates, venues, and document-specific details."
+
+
+def _summary_prompt(query: str, title: str, text_block: str, source_type: str, answer_focus: str) -> str:
     if source_type == "document":
         likely_fields = _extract_likely_fields(text_block)
         return (
             f"Analyze this uploaded document for the user request: '{query}'.\n"
             f"Source: {title}\n\n"
+            f"Answer focus: {_focus_instruction(answer_focus)}\n\n"
             f"Likely extracted document fields:\n{likely_fields or 'No obvious fields extracted.'}\n\n"
             "Extract the actual document content, not only file metadata. Identify:\n"
             "- Document type or purpose, such as admit card, invoice, resume, certificate, report, notice, etc.\n"
@@ -109,6 +118,7 @@ def _summary_prompt(query: str, title: str, text_block: str, source_type: str) -
 
     return (
         f"Extract the 3 most important factual points from this source about '{query}'.\n"
+        f"Answer focus: {_focus_instruction(answer_focus)}\n"
         f"Format as bullet points. Source: {title}\n\n{text_block}"
     )
 
@@ -118,6 +128,7 @@ def summarizer_agent(state: ResearchState) -> ResearchState:
     try:
         state["current_agent"] = "summarizer"
         query = state["query"]
+        answer_focus = state.get("preferences", {}).get("answer_focus", "key_details")
         search_results = state.get("search_results", [])
         logger.info("Summarizer agent started with %s sources", len(search_results))
 
@@ -139,7 +150,7 @@ def summarizer_agent(state: ResearchState) -> ResearchState:
             content = result.get("content", "")
             source_type = result.get("source_type", "web")
             text_block = f"{title}\n\n{content}"
-            prompt = _summary_prompt(query, title, text_block, source_type)
+            prompt = _summary_prompt(query, title, text_block, source_type, answer_focus)
             response = _invoke_with_retry(llm, prompt)
             summary = response.content.strip()
             summaries.append(summary)
