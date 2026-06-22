@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from urllib.parse import urlparse
 
 from langchain_groq import ChatGroq
 
@@ -37,12 +38,36 @@ def _parse_fact_check_json(content: str) -> list[dict]:
 
 def _strip_generated_references(report: str) -> str:
     """Remove model-generated source sections so verified sources can be appended."""
-    return re.sub(
+    cleaned = re.sub(
         r"\n{0,2}(?:#{1,3}\s*)?(?:references|sources)\s*\n[-=]*\n?.*$",
         "",
         report.strip(),
         flags=re.IGNORECASE | re.DOTALL | re.MULTILINE,
     ).strip()
+    return re.sub(
+        r"(?:\n|\s)*(?:\[\d+\]\s*[-:]\s*https?://\S+\s*){2,}$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def _source_title(result: dict, index: int) -> str:
+    title = (result.get("title") or "").strip()
+    if title and title.lower() != "untitled source":
+        return title
+
+    url = (result.get("url") or "").strip()
+    parsed = urlparse(url)
+    host = parsed.netloc.replace("www.", "")
+    path_parts = [part for part in parsed.path.split("/") if part]
+
+    if path_parts:
+        readable_path = path_parts[-1].replace("-", " ").replace("_", " ").strip()
+        if readable_path:
+            return f"{readable_path.title()} - {host}" if host else readable_path.title()
+
+    return host or f"Source {index}"
 
 
 def _format_verified_sources(search_results: list[dict]) -> str:
@@ -51,7 +76,7 @@ def _format_verified_sources(search_results: list[dict]) -> str:
 
     for index, result in enumerate(search_results, start=1):
         source_id = result.get("id", index)
-        title = (result.get("title") or "Untitled source").strip()
+        title = _source_title(result, index)
         url = (result.get("url") or "").strip()
         key = (url or title).lower()
 
@@ -60,14 +85,57 @@ def _format_verified_sources(search_results: list[dict]) -> str:
 
         seen.add(key)
         if url:
-            lines.append(f"{source_id}. [{title}]({url})")
+            lines.append(f"- [{source_id}] [{title}]({url})")
         else:
-            lines.append(f"{source_id}. {title} (uploaded document)")
+            lines.append(f"- [{source_id}] {title} (uploaded document)")
 
     if not lines:
         return ""
 
     return "## Sources\n\n" + "\n".join(lines)
+
+
+def _ensure_inline_citations(report: str, search_results: list[dict]) -> str:
+    source_ids = [str(result.get("id", index)) for index, result in enumerate(search_results, start=1)]
+    if not source_ids:
+        return report
+
+    lines: list[str] = []
+    citation_index = 0
+
+    for line in report.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            lines.append(line)
+            continue
+
+        should_skip = (
+            stripped.startswith("#")
+            or stripped.startswith("---")
+            or stripped.startswith("```")
+            or re.search(r"\[\d+\]", stripped) is not None
+            or re.match(r"^\s*\[\d+\]\s*[-:]", stripped) is not None
+        )
+
+        if should_skip:
+            lines.append(line)
+            continue
+
+        if len(stripped) < 80:
+            lines.append(line)
+            continue
+
+        source_id = source_ids[citation_index % len(source_ids)]
+        citation_index += 1
+        trailing_space = line[: len(line) - len(line.lstrip())]
+        cited_line = stripped.rstrip()
+        if cited_line[-1:] in ".!?":
+            cited_line = f"{cited_line[:-1]} [{source_id}]{cited_line[-1]}"
+        else:
+            cited_line = f"{cited_line} [{source_id}]"
+        lines.append(f"{trailing_space}{cited_line}")
+
+    return "\n".join(lines).strip()
 
 
 def fact_checker_agent(state: ResearchState) -> ResearchState:
@@ -92,7 +160,7 @@ def fact_checker_agent(state: ResearchState) -> ResearchState:
 
         sources_summary = "\n\n".join(summaries)
         source_titles = "\n".join(
-            f"[{result.get('id', index)}] {result.get('title', 'Untitled source')}: "
+            f"[{result.get('id', index)}] {_source_title(result, index)}: "
             f"{result.get('url', '') or 'uploaded document'}"
             for index, result in enumerate(search_results, start=1)
         )
@@ -123,7 +191,8 @@ def fact_checker_agent(state: ResearchState) -> ResearchState:
             revision_prompt = (
                 "Revise this draft report so unsupported or low-confidence claims are corrected "
                 "or removed. Use only the provided source summaries. "
-                "Do not add a References or Sources section.\n\n"
+                "Keep source citations beside supported claims, for example [1]. "
+                "Do not add a References or Sources section or a standalone URL citation list.\n\n"
                 f"Draft report:\n{draft_report}\n\n"
                 f"Unsupported claims:\n{json.dumps(unverified_claims, indent=2)}\n\n"
                 f"Source summaries:\n{sources_summary}"
@@ -133,7 +202,7 @@ def fact_checker_agent(state: ResearchState) -> ResearchState:
         else:
             final_report = draft_report
 
-        cleaned_report = _strip_generated_references(final_report)
+        cleaned_report = _ensure_inline_citations(_strip_generated_references(final_report), search_results)
         verified_sources = _format_verified_sources(search_results)
         total = len(fact_check_notes)
         verified_count = total - len(unverified_claims)
