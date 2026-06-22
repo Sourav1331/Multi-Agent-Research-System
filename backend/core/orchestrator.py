@@ -44,7 +44,11 @@ app = graph.compile()
 def extract_agent_output(node_name: str, state: ResearchState) -> dict:
     """Return the compact payload the frontend needs for a completed node."""
     if node_name == "researcher":
-        return {"sources_found": len(state.get("search_results", []))}
+        return {
+            "sources_found": len(state.get("search_results", [])),
+            "web_search_used": state.get("metadata", {}).get("web_search_used", True),
+            "uploaded_documents": state.get("metadata", {}).get("uploaded_documents", 0),
+        }
     if node_name == "summarizer":
         return {"summaries_count": len(state.get("summaries", []))}
     if node_name == "writer":
@@ -60,19 +64,49 @@ def _clean_uploaded_documents(uploaded_documents: list[dict] | None) -> list[dic
         title = str(document.get("title", "Uploaded document")).strip() or "Uploaded document"
         content = str(document.get("content", "")).strip()
         if content:
-            cleaned.append({"title": title[:160], "content": content[:12000]})
+            cleaned.append({"title": title[:160], "content": content[:30000]})
     return cleaned[:5]
 
 
-async def run_research_stream(query: str, uploaded_documents: list[dict] | None = None) -> AsyncGenerator[str, None]:
+def _clean_preferences(preferences: dict | None) -> dict:
+    allowed = {
+        "depth": {"quick", "balanced", "deep"},
+        "audience": {"executive", "technical", "general"},
+        "report_style": {"brief", "standard", "decision_memo"},
+        "citation_style": {"numbered", "inline_titles"},
+        "source_mode": {"auto", "documents_only", "web_and_documents"},
+    }
+    cleaned: dict[str, str] = {}
+
+    for key, values in allowed.items():
+        value = str((preferences or {}).get(key, "")).strip()
+        if value in values:
+            cleaned[key] = value
+
+    return {
+        "depth": cleaned.get("depth", "balanced"),
+        "audience": cleaned.get("audience", "general"),
+        "report_style": cleaned.get("report_style", "standard"),
+        "citation_style": cleaned.get("citation_style", "numbered"),
+        "source_mode": cleaned.get("source_mode", "auto"),
+    }
+
+
+async def run_research_stream(
+    query: str,
+    uploaded_documents: list[dict] | None = None,
+    preferences: dict | None = None,
+) -> AsyncGenerator[str, None]:
     """
     Yield JSON state updates after each LangGraph node completes.
 
     Intended for FastAPI StreamingResponse or SSE-style progress updates.
     """
     started_at = time.perf_counter()
-    state = initial_state(query)
+    cleaned_preferences = _clean_preferences(preferences)
+    state = initial_state(query, cleaned_preferences)
     state["uploaded_documents"] = _clean_uploaded_documents(uploaded_documents)
+    state["metadata"]["preferences"] = cleaned_preferences
     latest_state = state
 
     try:
@@ -128,10 +162,16 @@ async def run_research_stream(query: str, uploaded_documents: list[dict] | None 
         ) + "\n"
 
 
-async def run_research(query: str, uploaded_documents: list[dict] | None = None) -> ResearchState:
+async def run_research(
+    query: str,
+    uploaded_documents: list[dict] | None = None,
+    preferences: dict | None = None,
+) -> ResearchState:
     """Run the full research workflow and return the final state."""
-    state = initial_state(query)
+    cleaned_preferences = _clean_preferences(preferences)
+    state = initial_state(query, cleaned_preferences)
     state["uploaded_documents"] = _clean_uploaded_documents(uploaded_documents)
+    state["metadata"]["preferences"] = cleaned_preferences
 
     try:
         result = await app.ainvoke(state)

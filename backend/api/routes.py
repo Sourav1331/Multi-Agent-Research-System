@@ -16,6 +16,7 @@ research_history: list[str] = []
 class ResearchRequest(BaseModel):
     query: str = Field(..., min_length=10, max_length=500)
     uploaded_documents: list[dict] = Field(default_factory=list)
+    preferences: dict = Field(default_factory=dict)
 
 
 def _clean_query(query: str) -> str:
@@ -32,7 +33,7 @@ async def research_stream_endpoint(payload: ResearchRequest) -> StreamingRespons
     del research_history[:-10]
 
     async def event_stream():
-        async for chunk in run_research_stream(query, payload.uploaded_documents):
+        async for chunk in run_research_stream(query, payload.uploaded_documents, payload.preferences):
             yield f"data: {chunk.strip()}\n\n"
 
     return StreamingResponse(
@@ -47,7 +48,10 @@ async def research_endpoint(payload: ResearchRequest) -> dict:
     query = _clean_query(payload.query)
 
     try:
-        result = await asyncio.wait_for(run_research(query, payload.uploaded_documents), timeout=120)
+        result = await asyncio.wait_for(
+            run_research(query, payload.uploaded_documents, payload.preferences),
+            timeout=120,
+        )
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="Research request timed out") from exc
 
@@ -57,14 +61,6 @@ async def research_endpoint(payload: ResearchRequest) -> dict:
         "metadata": result.get("metadata", {}),
         "sources": result.get("search_results", []),
         "sources_count": len(result.get("search_results", [])),
-    }
-
-
-@router.get("/health")
-async def health_check() -> dict:
-    return {
-        "status": "ok",
-        "agents": ["researcher", "summarizer", "writer", "fact_checker"],
     }
 
 

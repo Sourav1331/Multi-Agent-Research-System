@@ -16,6 +16,10 @@ class ResearchState(TypedDict):
     # Expected item keys: title, content.
     uploaded_documents: list[dict]
 
+    # User-selected presentation preferences from the frontend.
+    # Expected keys: depth, audience, report_style, citation_style.
+    preferences: dict
+
     # Key points extracted from search results by the Summarizer agent.
     summaries: list[str]
 
@@ -42,12 +46,14 @@ class ResearchState(TypedDict):
     metadata: dict
 
 
-def initial_state(query: str) -> ResearchState:
+def initial_state(query: str, preferences: dict | None = None) -> ResearchState:
     """Create a fresh research workflow state for a user query."""
+    normalized_preferences = preferences or {}
     return {
         "query": query,
         "search_results": [],
         "uploaded_documents": [],
+        "preferences": normalized_preferences,
         "summaries": [],
         "draft_report": "",
         "fact_check_notes": [],
@@ -59,5 +65,6 @@ def initial_state(query: str) -> ResearchState:
             "processing_time": 0.0,
             "search_query_used": "",
             "timestamp": "",
+            "preferences": normalized_preferences,
         },
     }

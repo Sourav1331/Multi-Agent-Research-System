@@ -45,5 +45,10 @@ async def root() -> dict:
     return {"message": "Multi-Agent Research System API", "docs": "/docs"}
 
 
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "agents": ["researcher", "summarizer", "writer", "fact_checker"]}
+
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
