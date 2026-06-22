@@ -1,11 +1,12 @@
-import { Activity, Clock, FileSearch, Moon, Sparkles, Sun, Trash2 } from 'lucide-react'
+import { Activity, Clock, FileSearch, Moon, Sparkles, Sun, Trash2, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import AgentProgress from './components/AgentProgress'
 import QueryInput from './components/QueryInput'
 import ReportDisplay from './components/ReportDisplay'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || ''
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '')
 
 const agents = ['researcher', 'summarizer', 'writer', 'fact_checker']
 const HISTORY_KEY = 'research_workspace_history'
@@ -57,7 +58,10 @@ export default function App() {
   const [sources, setSources] = useState([])
   const [history, setHistory] = useState(storedHistory)
   const [error, setError] = useState(null)
+  const [runStartedAt, setRunStartedAt] = useState(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const latestFactCheckNotes = useRef([])
+  const resultsRef = useRef(null)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -67,6 +71,24 @@ export default function App() {
       // Theme still works for the current session if storage is unavailable.
     }
   }, [theme])
+
+  useEffect(() => {
+    if (!isLoading || !runStartedAt) return undefined
+
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.round((Date.now() - runStartedAt) / 1000)))
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [isLoading, runStartedAt])
+
+  useEffect(() => {
+    if (!isLoading) return
+
+    window.requestAnimationFrame(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [isLoading])
 
   function toggleTheme() {
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
@@ -102,6 +124,8 @@ export default function App() {
     setSources(item.sources || [])
     setCurrentAgent('complete')
     setIsLoading(false)
+    setRunStartedAt(null)
+    setElapsedSeconds(0)
     setError(null)
     setAgentStatuses({
       researcher: 'completed',
@@ -111,9 +135,11 @@ export default function App() {
     })
   }
 
-  async function handleResearch(nextQuery, uploadedDocuments = []) {
+  async function handleResearch(nextQuery, uploadedDocuments = [], preferences = {}) {
     setQuery(nextQuery)
     setIsLoading(true)
+    setRunStartedAt(Date.now())
+    setElapsedSeconds(0)
     setCurrentAgent('researcher')
     setAgentStatuses({ ...initialStatuses(), researcher: 'running' })
     setAgentOutputs(initialOutputs())
@@ -128,7 +154,7 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/api/research/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: nextQuery, uploaded_documents: uploadedDocuments }),
+        body: JSON.stringify({ query: nextQuery, uploaded_documents: uploadedDocuments, preferences }),
       })
 
       if (!response.ok || !response.body) {
@@ -179,6 +205,7 @@ export default function App() {
               factCheckNotes: latestFactCheckNotes.current,
               metadata: completedMetadata,
               sources: completedSources,
+              preferences,
               createdAt: new Date().toLocaleString(),
             })
             setAgentStatuses((previous) => {
@@ -190,6 +217,7 @@ export default function App() {
             })
             setCurrentAgent('complete')
             setIsLoading(false)
+            setRunStartedAt(null)
             continue
           }
 
@@ -222,12 +250,21 @@ export default function App() {
     } catch (requestError) {
       setError(requestError.message || 'Unable to stream research progress.')
       setIsLoading(false)
+      setRunStartedAt(null)
     }
   }
 
+  const completedAgents = agents.filter((agent) => agentStatuses[agent] === 'completed').length
+  const verifiedClaims = factCheckNotes.filter((note) => note.verified).length
+  const runStats = [
+    { label: 'Agents done', value: `${completedAgents}/${agents.length}`, icon: Activity, tone: 'text-blue-600 dark:text-blue-300' },
+    { label: 'Sources', value: metadata.total_sources || sources.length || 0, icon: FileSearch, tone: 'text-emerald-600 dark:text-emerald-300' },
+    { label: 'Verified', value: factCheckNotes.length ? `${verifiedClaims}/${factCheckNotes.length}` : '0/0', icon: Sparkles, tone: 'text-amber-600 dark:text-amber-300' },
+    { label: 'Runtime', value: isLoading ? `${elapsedSeconds}s` : `${metadata.processing_time || 0}s`, icon: Clock, tone: 'text-rose-600 dark:text-rose-300' },
+  ]
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
-    <main className="min-h-screen bg-[#f6f7f4] text-zinc-950 transition-colors dark:bg-zinc-950 dark:text-zinc-50">
+    <main className="min-h-screen bg-[#f7f7f2] text-zinc-950 transition-colors dark:bg-zinc-950 dark:text-zinc-50">
       <div className="border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -235,8 +272,8 @@ export default function App() {
               <FileSearch size={22} />
             </span>
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold tracking-normal text-zinc-950 dark:text-white sm:text-3xl">Research Workspace</h1>
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Plan, analyze, verify, and export a polished report.</p>
+              <h1 className="text-2xl font-bold tracking-normal text-zinc-950 dark:text-white sm:text-3xl">Agentic Research Lab</h1>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Launch multi-agent research, verify claims, and export polished reports.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -258,6 +295,36 @@ export default function App() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <section className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 dark:bg-blue-950 dark:text-blue-200">
+              <Zap size={16} />
+              Streaming multi-agent workflow
+            </div>
+            <h2 className="max-w-3xl text-3xl font-bold leading-tight text-zinc-950 dark:text-white sm:text-4xl">
+              Turn a question into a sourced, fact-checked research report.
+            </h2>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-zinc-600 dark:text-zinc-300">
+              Pick a research mode, attach documents, watch each agent finish its role, then inspect sources and export the final report.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {runStats.map((stat) => {
+              const Icon = stat.icon
+              return (
+                <div key={stat.label} className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 ${stat.tone}`}>
+                    <Icon size={19} />
+                  </div>
+                  <div className="text-2xl font-bold tabular-nums text-zinc-950 dark:text-white">{stat.value}</div>
+                  <div className="mt-1 text-sm font-medium text-zinc-500 dark:text-zinc-400">{stat.label}</div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
         <QueryInput onSubmit={handleResearch} isLoading={isLoading} />
 
         {error ? (
@@ -265,7 +332,7 @@ export default function App() {
         ) : null}
 
         {(isLoading || finalReport || currentAgent) && (
-          <div className="mt-6 grid gap-5 xl:grid-cols-[390px_minmax(0,1fr)]">
+          <div ref={resultsRef} className="mt-6 scroll-mt-6 grid gap-5 xl:grid-cols-[390px_minmax(0,1fr)]">
             <div className="space-y-5">
               <AgentProgress currentAgent={currentAgent} agentStatuses={agentStatuses} agentOutputs={agentOutputs} />
               <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -301,9 +368,14 @@ export default function App() {
 
         {!isLoading && !finalReport && !currentAgent ? (
           <section className="mt-6 grid gap-4 rounded-lg border border-dashed border-zinc-300 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:grid-cols-3">
-            {['Gather sources', 'Build the report', 'Verify claims'].map((item) => (
-              <div key={item} className="rounded-lg bg-zinc-50 p-4 text-sm font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                {item}
+            {[
+              ['1', 'Researcher gathers web and uploaded sources.'],
+              ['2', 'Summarizer extracts reusable evidence.'],
+              ['3', 'Writer and fact-checker produce the final report.'],
+            ].map(([step, label]) => (
+              <div key={step} className="flex min-h-24 items-center gap-3 rounded-lg bg-zinc-50 p-4 text-sm font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-950 font-bold text-white dark:bg-white dark:text-zinc-950">{step}</span>
+                {label}
               </div>
             ))}
           </section>
