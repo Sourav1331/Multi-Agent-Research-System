@@ -1,4 +1,4 @@
-import { ArrowRight, FileUp, Search, Sparkles, Target, X, Waypoints } from 'lucide-react'
+import { ArrowRight, FileText, FileUp, ListChecks, Search, Sparkles, TableProperties, Target, X } from 'lucide-react'
 import { useState } from 'react'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 
@@ -8,10 +8,10 @@ const examples = [
   { label: 'Tech brief', query: 'Compare modern vector database options for retrieval augmented generation' },
 ]
 
-const sourceModeOptions = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'documents_only', label: 'Docs only' },
-  { value: 'web_and_documents', label: 'Web + docs' },
+const answerFocusOptions = [
+  { value: 'summary', label: 'Summary', icon: FileText },
+  { value: 'key_details', label: 'Key details', icon: TableProperties },
+  { value: 'action_points', label: 'Action points', icon: ListChecks },
 ]
 
 export default function QueryInput({ onSubmit, isLoading }) {
@@ -25,6 +25,7 @@ export default function QueryInput({ onSubmit, isLoading }) {
     report_style: 'standard',
     citation_style: 'numbered',
     source_mode: 'auto',
+    answer_focus: 'key_details',
   })
 
   function submitQuery(event) {
@@ -205,9 +206,9 @@ export default function QueryInput({ onSubmit, isLoading }) {
           </div>
 
           <div className="space-y-3">
-            <OptionGroup icon={Waypoints} label="Sources" options={sourceModeOptions} value={preferences.source_mode} onChange={(value) => updatePreference('source_mode', value)} disabled={isLoading} />
+            <OptionGroup label="Answer focus" options={answerFocusOptions} value={preferences.answer_focus} onChange={(value) => updatePreference('answer_focus', value)} disabled={isLoading} />
             <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-              Auto uses uploaded documents only for PDF/file summaries and adds web search when the question needs outside context.
+              Key details extracts names, IDs, dates, venues, and other fields from documents. Action points turns the answer into a checklist.
             </p>
           </div>
         </div>
@@ -264,28 +265,29 @@ export default function QueryInput({ onSubmit, isLoading }) {
   )
 }
 
-function OptionGroup({ icon: Icon, label, options, value, onChange, disabled }) {
+function OptionGroup({ label, options, value, onChange, disabled }) {
   return (
     <div>
       <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-zinc-500 dark:text-zinc-400">
-        <Icon size={14} />
         {label}
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid gap-2">
         {options.map((option) => {
           const active = option.value === value
+          const Icon = option.icon
           return (
             <button
               key={option.value}
               type="button"
               disabled={disabled}
               onClick={() => onChange(option.value)}
-              className={`min-h-9 rounded-lg border px-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                 active
                   ? 'border-zinc-950 bg-zinc-950 text-white dark:border-white dark:bg-white dark:text-zinc-950'
                   : 'border-zinc-200 bg-white text-zinc-600 hover:border-blue-300 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-blue-500'
               }`}
             >
+              <Icon size={15} />
               {option.label}
             </button>
           )
