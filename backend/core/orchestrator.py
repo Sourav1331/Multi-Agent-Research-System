@@ -75,6 +75,7 @@ def _clean_preferences(preferences: dict | None) -> dict:
         "report_style": {"brief", "standard", "decision_memo"},
         "citation_style": {"numbered", "inline_titles"},
         "source_mode": {"auto", "documents_only", "web_and_documents"},
+        "answer_focus": {"summary", "key_details", "action_points"},
     }
     cleaned: dict[str, str] = {}
 
@@ -89,6 +90,7 @@ def _clean_preferences(preferences: dict | None) -> dict:
         "report_style": cleaned.get("report_style", "standard"),
         "citation_style": cleaned.get("citation_style", "numbered"),
         "source_mode": cleaned.get("source_mode", "auto"),
+        "answer_focus": cleaned.get("answer_focus", "key_details"),
     }
 
 
