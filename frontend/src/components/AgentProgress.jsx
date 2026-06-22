@@ -3,17 +3,18 @@ import { FileText, PenLine, Search, ShieldCheck } from 'lucide-react'
 import StatusBadge from './StatusBadge'
 
 const agents = [
-  { id: 'researcher', name: 'Researcher', icon: Search },
-  { id: 'summarizer', name: 'Summarizer', icon: FileText },
-  { id: 'writer', name: 'Writer', icon: PenLine },
-  { id: 'fact_checker', name: 'Fact Checker', icon: ShieldCheck },
+  { id: 'researcher', name: 'Researcher', icon: Search, role: 'Collects web and document evidence' },
+  { id: 'summarizer', name: 'Summarizer', icon: FileText, role: 'Compresses sources into key findings' },
+  { id: 'writer', name: 'Writer', icon: PenLine, role: 'Drafts the structured report' },
+  { id: 'fact_checker', name: 'Fact Checker', icon: ShieldCheck, role: 'Validates claims against sources' },
 ]
 
 function outputSummary(agentId, output) {
   if (!output) return null
 
   if (agentId === 'researcher') {
-    return <p className="text-sm text-zinc-600 dark:text-zinc-400">Found {output.sources_found || 0} sources</p>
+    const sourceLabel = output.web_search_used ? 'web + documents' : 'documents only'
+    return <p className="text-sm text-zinc-600 dark:text-zinc-400">Found {output.sources_found || 0} sources from {sourceLabel}</p>
   }
 
   if (agentId === 'summarizer') {
@@ -26,21 +27,17 @@ function outputSummary(agentId, output) {
 
   if (agentId === 'fact_checker') {
     const notes = output.fact_check_notes || []
+    const verifiedCount = notes.filter((note) => note.verified).length
     return (
       <div className="flex flex-wrap gap-2">
         {notes.length === 0 ? (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">No fact checks yet</p>
         ) : (
-          notes.map((note, index) => (
-            <span
-              key={`${note.claim}-${index}`}
-              className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                note.verified ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-              }`}
-            >
-              {note.verified ? 'Verified' : 'Unverified'} {Math.round((note.confidence || 0) * 100)}%
+          <>
+            <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
+              {verifiedCount}/{notes.length} verified
             </span>
-          ))
+          </>
         )}
       </div>
     )
@@ -57,11 +54,11 @@ export default function AgentProgress({ currentAgent, agentStatuses, agentOutput
     <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-5">
         <div className="mb-2 flex items-center justify-between text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          <span>Workflow Progress</span>
+          <span>Agent Timeline</span>
           <span className="tabular-nums">{progress}%</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-          <div className="h-full rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${progress}%` }} />
+          <div className="h-full rounded-full bg-blue-600 transition-all duration-500 dark:bg-blue-400" style={{ width: `${progress}%` }} />
         </div>
       </div>
 
@@ -93,7 +90,11 @@ export default function AgentProgress({ currentAgent, agentStatuses, agentOutput
                   </span>
                   <div className="min-w-0">
                     <h3 className="font-semibold text-zinc-950 dark:text-zinc-50">{agent.name}</h3>
-                    <div className="mt-2">{status === 'completed' ? outputSummary(agent.id, agentOutputs[agent.id]) : null}</div>
+                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{agent.role}</p>
+                    <div className="mt-2 min-h-5">
+                      {status === 'completed' ? outputSummary(agent.id, agentOutputs[agent.id]) : null}
+                      {isRunning ? <p className="text-sm font-medium text-blue-600 dark:text-blue-300">Processing now</p> : null}
+                    </div>
                   </div>
                 </div>
                 <StatusBadge agent={agent.name} status={status} />

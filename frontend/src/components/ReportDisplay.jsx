@@ -1,15 +1,25 @@
-import { CheckCircle, Clipboard, Download, ExternalLink, FileDown, XCircle } from 'lucide-react'
+import { CheckCircle, Clipboard, Download, ExternalLink, FileDown, Filter, Search, ShieldCheck, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 
 export default function ReportDisplay({ report, factCheckNotes = [], metadata = {}, sources = [] }) {
   const [showSources, setShowSources] = useState(true)
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [reportSearch, setReportSearch] = useState('')
+  const [copyState, setCopyState] = useState('Copy')
 
-  const visibleSources = sources.filter((source) => source?.title)
+  const allSources = sources.filter((source) => source?.title || source?.url)
+  const visibleSources = allSources.filter((source) => sourceFilter === 'all' || source.source_type === sourceFilter)
+  const reportMatches = reportSearch.trim() && report ? (report.toLowerCase().match(new RegExp(escapeRegExp(reportSearch.trim().toLowerCase()), 'g')) || []).length : 0
+  const wordCount = report ? report.trim().split(/\s+/).filter(Boolean).length : 0
+  const readingMinutes = wordCount ? Math.max(1, Math.ceil(wordCount / 220)) : 0
+  const verifiedClaims = factCheckNotes.filter((note) => note.verified).length
 
   function handleCopy() {
     if (report) {
       navigator.clipboard.writeText(report)
+      setCopyState('Copied')
+      window.setTimeout(() => setCopyState('Copy'), 1400)
     }
   }
 
@@ -92,7 +102,7 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
           <button
             type="button"
             onClick={() => setShowSources((current) => !current)}
-            disabled={visibleSources.length === 0}
+            disabled={allSources.length === 0}
             className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
             Sources
@@ -104,7 +114,7 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
             className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
             <Clipboard size={16} />
-            Copy
+            {copyState}
           </button>
           <button
             type="button"
@@ -128,10 +138,32 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
         </div>
       </div>
 
+      <div className="mb-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_repeat(2,120px)]">
+        <label className="flex min-h-11 items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+          <Search size={16} className="text-zinc-400" />
+          <input
+            type="search"
+            value={reportSearch}
+            onChange={(event) => setReportSearch(event.target.value)}
+            placeholder="Search report"
+            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-zinc-400"
+          />
+          {reportSearch ? <span className="shrink-0 text-xs font-semibold text-zinc-500">{reportMatches}</span> : null}
+        </label>
+        <Metric label="Words" value={wordCount} />
+        <Metric label="Read" value={readingMinutes ? `${readingMinutes}m` : '0m'} />
+      </div>
+
       <div data-report-print className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-5 dark:border-zinc-800 dark:bg-zinc-950">
         {report ? (
           <div className="react-markdown prose max-w-none text-zinc-800 dark:text-zinc-200">
-            <ReactMarkdown>{report}</ReactMarkdown>
+            <ReactMarkdown
+              components={{
+                a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+              }}
+            >
+              {report}
+            </ReactMarkdown>
           </div>
         ) : (
           <div className="space-y-3">
@@ -144,17 +176,40 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
 
         {showSources && visibleSources.length > 0 ? (
           <div className="mt-8 border-t border-zinc-200 pt-5 dark:border-zinc-800">
-            <h3 className="mb-4 text-base font-semibold text-zinc-950 dark:text-zinc-50">Source Viewer</h3>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">Source Viewer</h3>
+              <div className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-700 dark:bg-zinc-900">
+                <Filter size={15} className="ml-2 text-zinc-400" />
+                {[
+                  ['all', 'All'],
+                  ['web', 'Web'],
+                  ['document', 'Docs'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSourceFilter(value)}
+                    className={`min-h-8 rounded-md px-3 text-sm font-semibold transition ${
+                      sourceFilter === value
+                        ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950'
+                        : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid gap-3 lg:grid-cols-2">
               {visibleSources.map((source, index) => (
                 <article key={`${source.url || source.title}-${index}`} className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                   <div className="mb-2 flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400">[{source.id || index + 1}] {source.source_type === 'document' ? 'Uploaded document' : 'Web source'}</p>
-                      <h4 className="mt-1 line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">{source.title}</h4>
+                      <h4 className="mt-1 line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">{sourceTitle(source, index)}</h4>
                     </div>
                     {source.url ? (
-                      <a href={source.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-blue-600 dark:hover:bg-zinc-800 dark:hover:text-blue-300" aria-label={`Open ${source.title}`}>
+                      <a href={source.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-blue-600 dark:hover:bg-zinc-800 dark:hover:text-blue-300" aria-label={`Open ${sourceTitle(source, index)}`}>
                         <ExternalLink size={16} />
                       </a>
                     ) : null}
@@ -168,7 +223,13 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
 
         {factCheckNotes.length > 0 ? (
           <div className="fact-check-section mt-8 border-t border-zinc-200 pt-5 dark:border-zinc-800">
-            <h3 className="mb-4 text-base font-semibold text-zinc-950 dark:text-zinc-50">Fact Check Results</h3>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-zinc-950 dark:text-zinc-50">Fact Check Results</h3>
+              <div className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
+                <ShieldCheck size={16} />
+                {verifiedClaims}/{factCheckNotes.length} verified
+              </div>
+            </div>
             <div className="space-y-3">
               {factCheckNotes.map((note, index) => {
                 const Icon = note.verified ? CheckCircle : XCircle
@@ -180,7 +241,7 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
                     <Icon size={20} className={note.verified ? 'text-emerald-600' : 'text-rose-600'} />
                     <p className="text-sm text-zinc-800 dark:text-zinc-200">{note.claim}</p>
                     <span className={`text-sm font-semibold ${note.verified ? 'verified text-emerald-700' : 'unverified text-rose-700'}`}>
-                      {Math.round((note.confidence || 0) * 100)}%
+                      {note.verified ? 'Verified' : 'Unverified'}
                     </span>
                     <span className="truncate text-sm text-zinc-500 dark:text-zinc-400" title={note.source}>
                       {note.source}
@@ -198,4 +259,40 @@ export default function ReportDisplay({ report, factCheckNotes = [], metadata = 
       </div>
     </section>
   )
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="text-xs font-bold uppercase text-zinc-400">{label}</div>
+      <div className="mt-1 text-lg font-bold tabular-nums text-zinc-950 dark:text-white">{value}</div>
+    </div>
+  )
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function sourceTitle(source, index) {
+  const title = (source.title || '').trim()
+  if (title && title.toLowerCase() !== 'untitled source') return title
+
+  if (source.url) {
+    try {
+      const url = new URL(source.url)
+      const host = url.hostname.replace(/^www\./, '')
+      const parts = url.pathname.split('/').filter(Boolean)
+      const lastPart = parts[parts.length - 1]
+      if (lastPart) {
+        const readable = lastPart.replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+        return `${readable} - ${host}`
+      }
+      return host
+    } catch {
+      return source.url
+    }
+  }
+
+  return `Source ${index + 1}`
 }
