@@ -3,15 +3,17 @@
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
-import chromadb
-from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from core.state import ResearchState
 
 logger = logging.getLogger(__name__)
+
+MAX_WEB_CONTENT_CHARS = 6000
+MAX_DOCUMENT_CONTENT_CHARS = 12000
+DEFAULT_SUMMARY_WORKERS = 3
 
 FIELD_LABELS = (
     "name",
@@ -49,7 +51,10 @@ def _invoke_with_retry(llm, messages):
                 raise
 
 
-def _research_docs_vector_store(embeddings: HuggingFaceEmbeddings) -> Chroma:
+def _research_docs_vector_store(embeddings):
+    import chromadb
+    from langchain_community.vectorstores import Chroma
+
     client = chromadb.PersistentClient(path="./chroma_db")
     client.get_or_create_collection("research_docs")
     return Chroma(
@@ -58,6 +63,46 @@ def _research_docs_vector_store(embeddings: HuggingFaceEmbeddings) -> Chroma:
         persist_directory="./chroma_db",
         client=client,
     )
+
+
+def _summarizer_workers() -> int:
+    try:
+        return max(1, min(5, int(os.getenv("SUMMARY_WORKERS", DEFAULT_SUMMARY_WORKERS))))
+    except ValueError:
+        return DEFAULT_SUMMARY_WORKERS
+
+
+def _trim_content(content: str, source_type: str) -> str:
+    max_chars = MAX_DOCUMENT_CONTENT_CHARS if source_type == "document" else MAX_WEB_CONTENT_CHARS
+    if len(content) <= max_chars:
+        return content
+    return f"{content[:max_chars]}\n\n[Content trimmed for faster summarization.]"
+
+
+def _should_persist_summaries() -> bool:
+    return os.getenv("ENABLE_CHROMA_PERSISTENCE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _persist_summaries(summaries: list[str], metadatas: list[dict]) -> None:
+    if not summaries:
+        return
+
+    from langchain_huggingface import HuggingFaceEmbeddings
+
+    logger.info("Loading embedding model for Chroma persistence")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    vector_store = _research_docs_vector_store(embeddings)
+    vector_store.add_texts(texts=summaries, metadatas=metadatas)
+
+
+def _summarize_result(llm: ChatGroq, query: str, answer_focus: str, result: dict) -> tuple[str, dict]:
+    title = result.get("title", "Untitled source")
+    content = _trim_content(str(result.get("content", "")), result.get("source_type", "web"))
+    source_type = result.get("source_type", "web")
+    text_block = f"{title}\n\n{content}"
+    prompt = _summary_prompt(query, title, text_block, source_type, answer_focus)
+    response = _invoke_with_retry(llm, prompt)
+    return response.content.strip(), {"source_url": result.get("url", ""), "title": title}
 
 
 def _extract_likely_fields(text: str) -> str:
@@ -143,24 +188,22 @@ def summarizer_agent(state: ResearchState) -> ResearchState:
             groq_api_key=os.getenv("GROQ_API_KEY"),
         )
 
-        summaries: list[str] = []
-        metadatas: list[dict] = []
-        for result in search_results:
-            title = result.get("title", "Untitled source")
-            content = result.get("content", "")
-            source_type = result.get("source_type", "web")
-            text_block = f"{title}\n\n{content}"
-            prompt = _summary_prompt(query, title, text_block, source_type, answer_focus)
-            response = _invoke_with_retry(llm, prompt)
-            summary = response.content.strip()
-            summaries.append(summary)
-            metadatas.append({"source_url": result.get("url", ""), "title": title})
+        workers = min(_summarizer_workers(), len(search_results))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            summarized_results = list(
+                executor.map(
+                    lambda result: _summarize_result(llm, query, answer_focus, result),
+                    search_results,
+                )
+            )
 
-        print("Loading embedding model... (first run takes 1-2 minutes)")
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        print("Embedding model loaded.")
-        vector_store = _research_docs_vector_store(embeddings)
-        vector_store.add_texts(texts=summaries, metadatas=metadatas)
+        summaries = [summary for summary, _metadata in summarized_results]
+        metadatas = [metadata for _summary, metadata in summarized_results]
+
+        if _should_persist_summaries():
+            _persist_summaries(summaries, metadatas)
+        else:
+            logger.info("Skipped Chroma persistence; set ENABLE_CHROMA_PERSISTENCE=true to enable it")
 
         state["summaries"] = summaries
         logger.info("Summarizer agent created %s summaries", len(summaries))

@@ -4,13 +4,10 @@ import contextlib
 import io
 import time
 
-import chromadb
 from dotenv import load_dotenv
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_community.vectorstores import Chroma
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
 
 load_dotenv()
 
@@ -26,7 +23,10 @@ def _invoke_with_retry(llm, messages):
                 raise
 
 
-def _research_docs_vector_store(embeddings: HuggingFaceEmbeddings) -> Chroma:
+def _research_docs_vector_store(embeddings):
+    import chromadb
+    from langchain_community.vectorstores import Chroma
+
     client = chromadb.PersistentClient(path="./chroma_db")
     client.get_or_create_collection("research_docs")
     return Chroma(
@@ -61,9 +61,9 @@ def web_search_tool(query: str) -> list[dict] | str:
 def document_retrieval_tool(query: str, n_results: int = 5) -> list[str] | str:
     """Retrieve semantically relevant chunks from stored documents using vector similarity search."""
     try:
-        print("Loading embedding model... (first run takes 1-2 minutes)")
+        from langchain_huggingface import HuggingFaceEmbeddings
+
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        print("Embedding model loaded.")
         vector_store = _research_docs_vector_store(embeddings)
         documents = vector_store.similarity_search(query, k=n_results)
         return [document.page_content for document in documents]
