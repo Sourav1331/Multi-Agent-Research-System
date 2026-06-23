@@ -2,8 +2,8 @@
 
 import logging
 import os
+import re
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 from langchain_groq import ChatGroq
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 MAX_WEB_CONTENT_CHARS = 6000
 MAX_DOCUMENT_CONTENT_CHARS = 12000
-DEFAULT_SUMMARY_WORKERS = 3
+DEFAULT_LLM_TIMEOUT_SECONDS = 25
 
 FIELD_LABELS = (
     "name",
@@ -65,11 +65,15 @@ def _research_docs_vector_store(embeddings):
     )
 
 
-def _summarizer_workers() -> int:
+def _llm_timeout_seconds() -> int:
     try:
-        return max(1, min(5, int(os.getenv("SUMMARY_WORKERS", DEFAULT_SUMMARY_WORKERS))))
+        return max(5, min(60, int(os.getenv("SUMMARY_LLM_TIMEOUT_SECONDS", DEFAULT_LLM_TIMEOUT_SECONDS))))
     except ValueError:
-        return DEFAULT_SUMMARY_WORKERS
+        return DEFAULT_LLM_TIMEOUT_SECONDS
+
+
+def _should_use_llm_summarizer() -> bool:
+    return os.getenv("USE_LLM_SUMMARIZER", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _trim_content(content: str, source_type: str) -> str:
@@ -95,14 +99,60 @@ def _persist_summaries(summaries: list[str], metadatas: list[dict]) -> None:
     vector_store.add_texts(texts=summaries, metadatas=metadatas)
 
 
-def _summarize_result(llm: ChatGroq, query: str, answer_focus: str, result: dict) -> tuple[str, dict]:
+def _source_metadata(result: dict) -> dict:
+    return {"source_url": result.get("url", ""), "title": result.get("title", "Untitled source")}
+
+
+def _simple_source_summary(query: str, result: dict) -> str:
+    title = result.get("title", "Untitled source")
+    source_type = result.get("source_type", "web")
+    content = _trim_content(str(result.get("content", "")), source_type)
+
+    if source_type == "document":
+        likely_fields = _extract_likely_fields(content)
+        if likely_fields:
+            return f"Source: {title}\nKey extracted document fields:\n{likely_fields}"
+
+    cleaned = re.sub(r"\s+", " ", content).strip()
+    if not cleaned:
+        return f"Source: {title}\nNo readable content was found for this source."
+
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    selected = [sentence.strip() for sentence in sentences if len(sentence.strip()) > 40][:4]
+    if not selected:
+        selected = [cleaned[:900]]
+
+    bullets = "\n".join(f"- {sentence[:500]}" for sentence in selected)
+    return f"Source: {title}\nRelevant points for '{query}':\n{bullets}"
+
+
+def _summarize_result_with_llm(llm: ChatGroq, query: str, answer_focus: str, result: dict) -> tuple[str, dict]:
     title = result.get("title", "Untitled source")
     content = _trim_content(str(result.get("content", "")), result.get("source_type", "web"))
     source_type = result.get("source_type", "web")
     text_block = f"{title}\n\n{content}"
     prompt = _summary_prompt(query, title, text_block, source_type, answer_focus)
     response = _invoke_with_retry(llm, prompt)
-    return response.content.strip(), {"source_url": result.get("url", ""), "title": title}
+    return response.content.strip(), _source_metadata(result)
+
+
+def _summarize_result(query: str, answer_focus: str, result: dict) -> tuple[str, dict]:
+    if not _should_use_llm_summarizer():
+        return _simple_source_summary(query, result), _source_metadata(result)
+
+    llm = ChatGroq(
+        model="llama-3.1-8b-instant",
+        temperature=0.2,
+        groq_api_key=os.getenv("GROQ_API_KEY"),
+        request_timeout=_llm_timeout_seconds(),
+        max_retries=0,
+    )
+
+    try:
+        return _summarize_result_with_llm(llm, query, answer_focus, result)
+    except Exception as exc:
+        logger.warning("LLM summarization failed for %s; using fast fallback: %s", result.get("title", "source"), exc)
+        return _simple_source_summary(query, result), _source_metadata(result)
 
 
 def _extract_likely_fields(text: str) -> str:
@@ -182,20 +232,7 @@ def summarizer_agent(state: ResearchState) -> ResearchState:
             logger.warning("Summarizer agent stopped: no search results")
             return state
 
-        llm = ChatGroq(
-            model="llama-3.1-8b-instant",
-            temperature=0.2,
-            groq_api_key=os.getenv("GROQ_API_KEY"),
-        )
-
-        workers = min(_summarizer_workers(), len(search_results))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            summarized_results = list(
-                executor.map(
-                    lambda result: _summarize_result(llm, query, answer_focus, result),
-                    search_results,
-                )
-            )
+        summarized_results = [_summarize_result(query, answer_focus, result) for result in search_results]
 
         summaries = [summary for summary, _metadata in summarized_results]
         metadatas = [metadata for _summary, metadata in summarized_results]

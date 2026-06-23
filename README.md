@@ -119,10 +119,10 @@ For faster deployed summarization, leave Chroma persistence disabled unless you 
 
 ```env
 ENABLE_CHROMA_PERSISTENCE=false
-SUMMARY_WORKERS=3
+USE_LLM_SUMMARIZER=false
 ```
 
-`SUMMARY_WORKERS` controls how many sources the summarizer sends to Groq at the same time. Use `2` or `3` on constrained/free deployments; higher values can hit API rate limits.
+The default summarizer now extracts compact source summaries without an extra Groq call, which avoids the deployment hang where the workflow stays on the summarizer step. If you explicitly want LLM-based source summaries, set `USE_LLM_SUMMARIZER=true`; use `SUMMARY_LLM_TIMEOUT_SECONDS=25` to keep it from waiting too long per source.
 
 In Docker, the frontend container serves the built React app on port `5173` and proxies `/api/*` plus `/health` to the backend container.
 
