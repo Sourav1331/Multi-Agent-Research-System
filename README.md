@@ -19,7 +19,7 @@ LangGraph State Machine
   |
   +--> Researcher Agent -----> Tavily Web Search
   |
-  +--> Summarizer Agent -----> Groq LLaMA 3.1 + ChromaDB
+  +--> Summarizer Agent -----> Groq LLaMA 3.1
   |
   +--> Writer Agent ---------> Groq LLaMA 3.1
   |
@@ -35,7 +35,7 @@ Final Markdown Report
 - Four-agent pipeline: researcher, summarizer, writer, and fact checker.
 - LangGraph state machine orchestration with shared workflow state.
 - Tavily-powered web research for current information.
-- RAG-ready document retrieval using Hugging Face embeddings and persistent ChromaDB.
+- Optional RAG-ready document retrieval using Hugging Face embeddings and persistent ChromaDB.
 - Markdown report rendering with copy and download actions.
 - Docker Compose setup for backend, Nginx-served frontend, and persistent ChromaDB storage.
 
@@ -114,6 +114,15 @@ On Render, set this backend environment variable so FastAPI CORS allows the Verc
 ```env
 FRONTEND_URL=https://multi-agent-research-system-rose.vercel.app
 ```
+
+For faster deployed summarization, leave Chroma persistence disabled unless you need cross-request vector retrieval:
+
+```env
+ENABLE_CHROMA_PERSISTENCE=false
+SUMMARY_WORKERS=3
+```
+
+`SUMMARY_WORKERS` controls how many sources the summarizer sends to Groq at the same time. Use `2` or `3` on constrained/free deployments; higher values can hit API rate limits.
 
 In Docker, the frontend container serves the built React app on port `5173` and proxies `/api/*` plus `/health` to the backend container.
 
