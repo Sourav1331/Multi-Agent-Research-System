@@ -18,6 +18,7 @@ load_dotenv()
 app = FastAPI(title="Multi-Agent Research API", version="1.0.0")
 
 frontend_origins = {
+    "https://multi-agent-research-system-rose.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
@@ -28,6 +29,13 @@ frontend_origins = {
 
 if frontend_url := os.getenv("FRONTEND_URL"):
     frontend_origins.add(frontend_url.rstrip("/"))
+
+if frontend_urls := os.getenv("FRONTEND_URLS"):
+    frontend_origins.update(
+        frontend_url.strip().rstrip("/")
+        for frontend_url in frontend_urls.split(",")
+        if frontend_url.strip()
+    )
 
 app.add_middleware(
     CORSMiddleware,
