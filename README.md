@@ -69,7 +69,7 @@ Final Markdown Report
    GROQ_API_KEY=your_groq_api_key_here
    TAVILY_API_KEY=your_tavily_api_key_here
    HF_TOKEN=your_huggingface_token_here
-   FRONTEND_URL=http://localhost:5173
+   FRONTEND_URL=https://multi-agent-research-system-rose.vercel.app
    ```
 
 4. Get API keys from:
@@ -94,6 +94,25 @@ The backend API docs are available at:
 
 ```text
 http://localhost:8000/docs
+```
+
+For the deployed app, use these service URLs:
+
+```text
+Frontend: https://multi-agent-research-system-rose.vercel.app/
+Backend:  https://multi-agent-research-system-qvbr.onrender.com
+```
+
+On Vercel, set this frontend environment variable if you want to override the built-in backend URL:
+
+```env
+VITE_API_URL=https://multi-agent-research-system-qvbr.onrender.com
+```
+
+On Render, set this backend environment variable so FastAPI CORS allows the Vercel app:
+
+```env
+FRONTEND_URL=https://multi-agent-research-system-rose.vercel.app
 ```
 
 In Docker, the frontend container serves the built React app on port `5173` and proxies `/api/*` plus `/health` to the backend container.
