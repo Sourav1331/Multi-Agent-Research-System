@@ -57,13 +57,8 @@ Final Markdown Report
    cd multi-agent-research
    ```
 
-2. Copy the example environment file:
 
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Fill in your API keys in `.env`:
+2. Fill in your API keys in `.env`:
 
    ```env
    GROQ_API_KEY=your_groq_api_key_here
@@ -71,18 +66,18 @@ Final Markdown Report
    FRONTEND_URL=https://multi-agent-research-system-rose.vercel.app
    ```
 
-4. Get API keys from:
+3. Get API keys from:
 
    - Groq: https://console.groq.com
    - Tavily: https://tavily.com
 
-5. Start the full stack:
+4. Start the full stack:
 
    ```bash
    docker-compose up --build
    ```
 
-6. Open the app:
+5. Open the app:
 
    ```text
    http://localhost:5173
