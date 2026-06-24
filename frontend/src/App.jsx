@@ -165,89 +165,108 @@ export default function App() {
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
+      let streamBuffer = ''
+
+      function handleStreamEvent(rawEvent) {
+        const dataLines = rawEvent
+          .split('\n')
+          .map((line) => line.trimEnd())
+          .filter((line) => line.startsWith('data: '))
+
+        if (dataLines.length === 0) return false
+
+        let event
+        try {
+          event = JSON.parse(dataLines.map((line) => line.slice(6)).join('\n'))
+        } catch {
+          return false
+        }
+
+        if (event.status === 'error') {
+          setError(event.data?.error || 'Research failed.')
+          setAgentStatuses((previous) => ({
+            ...previous,
+            [event.current_agent]: 'error',
+          }))
+          setIsLoading(false)
+          return true
+        }
+
+        if (event.status === 'complete') {
+          const completedReport = event.data?.final_report || ''
+          const completedMetadata = event.data?.metadata || {}
+          const completedSources = event.data?.sources || []
+          setFinalReport(completedReport)
+          setMetadata(completedMetadata)
+          setSources(completedSources)
+          saveHistory({
+            id: `${Date.now()}`,
+            query: nextQuery,
+            report: completedReport,
+            factCheckNotes: latestFactCheckNotes.current,
+            metadata: completedMetadata,
+            sources: completedSources,
+            preferences,
+            createdAt: new Date().toLocaleString(),
+          })
+          setAgentStatuses((previous) => {
+            const completed = { ...previous }
+            agents.forEach((agent) => {
+              completed[agent] = completed[agent] === 'error' ? 'error' : 'completed'
+            })
+            return completed
+          })
+          setCurrentAgent('complete')
+          setIsLoading(false)
+          setRunStartedAt(null)
+          return false
+        }
+
+        const agent = event.current_agent
+        const agentIndex = agents.indexOf(agent)
+        setCurrentAgent(agent)
+        setAgentOutputs((previous) => ({ ...previous, [agent]: event.data }))
+
+        if (agent === 'fact_checker') {
+          const notes = event.data?.fact_check_notes || []
+          latestFactCheckNotes.current = notes
+          setFactCheckNotes(notes)
+        }
+
+        setAgentStatuses((previous) => {
+          const next = { ...previous }
+          agents.forEach((agentName, index) => {
+            if (index < agentIndex) next[agentName] = 'completed'
+          })
+          next[agent] = event.status === 'completed' ? 'completed' : 'running'
+          const nextAgent = agents[agentIndex + 1]
+          if (nextAgent && event.status === 'completed') {
+            next[nextAgent] = 'running'
+            setCurrentAgent(nextAgent)
+          }
+          return next
+        })
+
+        return false
+      }
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
+        streamBuffer += decoder.decode(value, { stream: true })
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-
-          let event
-          try {
-            event = JSON.parse(line.slice(6))
-          } catch {
-            continue
-          }
-
-          if (event.status === 'error') {
-            setError(event.data?.error || 'Research failed.')
-            setAgentStatuses((previous) => ({
-              ...previous,
-              [event.current_agent]: 'error',
-            }))
-            setIsLoading(false)
-            return
-          }
-
-          if (event.status === 'complete') {
-            const completedReport = event.data?.final_report || ''
-            const completedMetadata = event.data?.metadata || {}
-            const completedSources = event.data?.sources || []
-            setFinalReport(completedReport)
-            setMetadata(completedMetadata)
-            setSources(completedSources)
-            saveHistory({
-              id: `${Date.now()}`,
-              query: nextQuery,
-              report: completedReport,
-              factCheckNotes: latestFactCheckNotes.current,
-              metadata: completedMetadata,
-              sources: completedSources,
-              preferences,
-              createdAt: new Date().toLocaleString(),
-            })
-            setAgentStatuses((previous) => {
-              const completed = { ...previous }
-              agents.forEach((agent) => {
-                completed[agent] = completed[agent] === 'error' ? 'error' : 'completed'
-              })
-              return completed
-            })
-            setCurrentAgent('complete')
-            setIsLoading(false)
-            setRunStartedAt(null)
-            continue
-          }
-
-          const agent = event.current_agent
-          const agentIndex = agents.indexOf(agent)
-          setCurrentAgent(agent)
-          setAgentOutputs((previous) => ({ ...previous, [agent]: event.data }))
-
-          if (agent === 'fact_checker') {
-            const notes = event.data?.fact_check_notes || []
-            latestFactCheckNotes.current = notes
-            setFactCheckNotes(notes)
-          }
-
-          setAgentStatuses((previous) => {
-            const next = { ...previous }
-            agents.forEach((agentName, index) => {
-              if (index < agentIndex) next[agentName] = 'completed'
-            })
-            next[agent] = event.status === 'completed' ? 'completed' : 'running'
-            const nextAgent = agents[agentIndex + 1]
-            if (nextAgent && event.status === 'completed') {
-              next[nextAgent] = 'running'
-              setCurrentAgent(nextAgent)
-            }
-            return next
-          })
+        while (streamBuffer.includes('\n\n')) {
+          const boundaryIndex = streamBuffer.indexOf('\n\n')
+          const rawEvent = streamBuffer.slice(0, boundaryIndex)
+          streamBuffer = streamBuffer.slice(boundaryIndex + 2)
+          if (handleStreamEvent(rawEvent)) return
         }
+      }
+
+      streamBuffer += decoder.decode()
+      if (streamBuffer.trim()) {
+        handleStreamEvent(streamBuffer)
       }
     } catch (requestError) {
       setError(requestError.message || 'Unable to stream research progress.')
