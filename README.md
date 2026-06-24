@@ -68,7 +68,6 @@ Final Markdown Report
    ```env
    GROQ_API_KEY=your_groq_api_key_here
    TAVILY_API_KEY=your_tavily_api_key_here
-   HF_TOKEN=your_huggingface_token_here
    FRONTEND_URL=https://multi-agent-research-system-rose.vercel.app
    ```
 
@@ -76,7 +75,6 @@ Final Markdown Report
 
    - Groq: https://console.groq.com
    - Tavily: https://tavily.com
-   - Hugging Face: https://huggingface.co
 
 5. Start the full stack:
 
@@ -156,6 +154,6 @@ All three services provide free-tier access suitable for local development.
 
 - Groq API key: create an account at https://console.groq.com, open API Keys, and generate a new key.
 - Tavily API key: create an account at https://tavily.com, then copy your API key from the dashboard.
-- Hugging Face token: create an account at https://huggingface.co, go to Settings, then Access Tokens, and create a token.
+
 
 Keep real secrets in `.env` only. The `.env` file is ignored by Git; commit `.env.example` with placeholder values instead.
